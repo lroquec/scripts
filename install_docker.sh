@@ -1,5 +1,7 @@
 #!/bin/bash
 
+## Check for update https://docs.docker.com/engine/install/debian/
+
 # Update package list
 sudo apt-get update
 
