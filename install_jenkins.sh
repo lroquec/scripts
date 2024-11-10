@@ -1,4 +1,7 @@
 #!/bin/bash
+
+# Check for updates https://www.jenkins.io/doc/book/installing/linux/
+
 # This script installs Jenkins on an Ubuntu server
 
 # Update package lists
