@@ -1,0 +1,161 @@
+#!/bin/bash
+
+## Usage ##
+# ./install_vault_consul.sh standalone
+# ./install_vault_consul.sh cluster 10.0.0.2 10.0.0.3
+
+# VARIABLES
+MODE=${1:-"standalone"} # standalone or cluster
+NODE_IP=$(hostname -I | awk '{print $1}') # Private IP of the current node
+CLUSTER_NODES=("10.0.0.2" "10.0.0.3") # Private IPs of other nodes in cluster mode
+
+# Overwrite CLUSTER_NODES if nodes are provided as arguments
+if [[ $MODE == "cluster" && $# -ge 2 ]]; then
+  CLUSTER_NODES=("${@:2}")
+fi
+
+# FUNCTIONS
+
+install_dependencies() {
+  echo "### Installing dependencies..."
+  sudo yum update -y
+  sudo yum install -y yum-utils
+}
+
+install_hashicorp_tools() {
+  echo "### Adding HashiCorp repository..."
+  sudo yum-config-manager --add-repo https://rpm.releases.hashicorp.com/AmazonLinux/hashicorp.repo
+
+  echo "### Installing Consul and Vault..."
+  sudo yum install -y consul vault
+  consul --version
+  vault --version
+}
+
+configure_consul() {
+  echo "### Configuring Consul..."
+  sudo mkdir -p /etc/consul.d /opt/consul/data
+  sudo chown -R ec2-user:ec2-user /opt/consul/data
+
+  if [[ $MODE == "standalone" ]]; then
+    cat <<EOF | sudo tee /etc/consul.d/consul.hcl
+server = true
+bootstrap_expect = 1
+data_dir = "/opt/consul/data"
+bind_addr = "$NODE_IP"
+client_addr = "0.0.0.0"
+ui = true
+EOF
+  else
+    cat <<EOF | sudo tee /etc/consul.d/consul.hcl
+server = true
+bootstrap_expect = 3
+data_dir = "/opt/consul/data"
+bind_addr = "$NODE_IP"
+client_addr = "0.0.0.0"
+retry_join = [$(printf '"%s",' "${CLUSTER_NODES[@]}" | sed 's/,$//')]
+ui = true
+EOF
+  fi
+
+  sudo tee /etc/systemd/system/consul.service > /dev/null <<EOF
+[Unit]
+Description="HashiCorp Consul"
+Documentation=https://www.consul.io/
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/bin/consul agent -config-dir=/etc/consul.d/
+ExecReload=/bin/kill -HUP \$MAINPID
+KillMode=process
+Restart=on-failure
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  sudo systemctl daemon-reload
+  sudo systemctl enable consul
+  sudo systemctl start consul
+}
+
+configure_vault() {
+  echo "### Configuring Vault..."
+  sudo mkdir -p /etc/vault.d /opt/vault/data
+  sudo chown -R ec2-user:ec2-user /opt/vault/data
+
+  if [[ $MODE == "standalone" ]]; then
+    cat <<EOF | sudo tee /etc/vault.d/vault.hcl
+storage "file" {
+  path = "/opt/vault/data"
+}
+
+listener "tcp" {
+  address     = "0.0.0.0:8200"
+  tls_disable = 1
+}
+
+ui = true
+EOF
+  else
+    cat <<EOF | sudo tee /etc/vault.d/vault.hcl
+storage "consul" {
+  address = "127.0.0.1:8500"
+  path    = "vault/"
+}
+
+listener "tcp" {
+  address     = "0.0.0.0:8200"
+  cluster_address = "$NODE_IP:8201"
+  tls_disable = 1
+}
+
+api_addr = "http://$NODE_IP:8200"
+cluster_addr = "http://$NODE_IP:8201"
+ui = true
+EOF
+  fi
+
+  sudo tee /etc/systemd/system/vault.service > /dev/null <<EOF
+[Unit]
+Description="HashiCorp Vault"
+Documentation=https://www.vaultproject.io/
+After=network-online.target consul.service
+Requires=consul.service
+
+[Service]
+ExecStart=/usr/bin/vault server -config=/etc/vault.d/vault.hcl
+ExecReload=/bin/kill -HUP \$MAINPID
+KillMode=process
+Restart=on-failure
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  sudo systemctl daemon-reload
+  sudo systemctl enable vault
+  sudo systemctl start vault
+}
+
+initialize_vault() {
+  echo "### Initializing Vault..."
+  if [[ $MODE == "standalone" || $NODE_IP == "${CLUSTER_NODES[0]}" ]]; then
+    vault operator init -format=json > /tmp/vault-init-output.json
+    echo "Vault initialized. Recovery keys are saved at /tmp/vault-init-output.json"
+  else
+    echo "This node does not initialize Vault in cluster mode. Use the leader's recovery keys to unseal."
+  fi
+}
+
+# EXECUTION
+install_dependencies
+install_hashicorp_tools
+configure_consul
+configure_vault
+
+echo "### Installation complete. Check Vault status with:"
+echo "vault status"
