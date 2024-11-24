@@ -14,3 +14,10 @@ sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
 
 # Verify the installation
 kubectl version --client --output=yaml
+
+# Install bash completion
+kubectl completion bash | sudo tee /etc/bash_completion.d/kubectl > /dev/null
+
+# Set alias for kubectl
+echo "alias k=kubectl" >> ~/.bashrc
+echo "complete -F __start_kubectl k" >> ~/.bashrc
