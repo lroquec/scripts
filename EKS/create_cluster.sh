@@ -8,6 +8,10 @@ KEY_PAIR="eks-keypair"
 NODE_TYPE="t4g.medium"
 TAGS="env=dev,team=devops,owner=lroque"
 NODE_LABELS="env=dev"
+DESIRED_CAPACITY="2"
+MIN_CAPACITY="1"
+MAX_CAPACITY="3"
+VOLUME_SIZE="20"
 
 ## Execute the eksctl command with the variable
 eksctl create cluster --name="$CLUSTER_NAME" \
@@ -26,10 +30,10 @@ eksctl create nodegroup --cluster="$CLUSTER_NAME" \
                         --region="$REGION" \
                         --name="ng-$CLUSTER_NAME" \
                         --node-type="$NODE_TYPE" \
-                        --nodes="1" \
-                        --nodes-min="2" \
-                        --nodes-max="3" \
-                        --node-volume-size="20" \
+                        --nodes="$DESIRED_CAPACITY" \
+                        --nodes-min="$MIN_CAPACITY" \
+                        --nodes-max="$MAX_CAPACITY" \
+                        --node-volume-size="$VOLUME_SIZE" \
                         --ssh-access \
                         --ssh-public-key="$KEY_PAIR" \
                         --managed \
