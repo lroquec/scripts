@@ -42,6 +42,7 @@ eksctl create nodegroup --cluster="$CLUSTER_NAME" \
                         --full-ecr-access \
                         --appmesh-access \
                         --alb-ingress-access \
+                        --node-private-networking \
                         --enable-ssm \
                         --region="$REGION" \
                         --node-labels="$NODE_LABELS" \
